@@ -1,0 +1,77 @@
+name: Build macOS App
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '**.py'
+      - 'assets/**'
+      - '*-mac.spec'
+      - 'requirements.txt'
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller pillow
+
+      - name: Generate .icns icon
+        run: |
+          python - << 'EOF'
+          from PIL import Image, ImageDraw
+          import os, math
+
+          sizes = [16, 32, 64, 128, 256, 512, 1024]
+          iconset = "icon.iconset"
+          os.makedirs(iconset, exist_ok=True)
+
+          for size in sizes:
+              img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+              draw = ImageDraw.Draw(img)
+              margin = max(1, size // 16)
+              r = size // 5
+              draw.rounded_rectangle(
+                  [margin, margin, size - margin - 1, size - margin - 1],
+                  radius=r, fill=(255, 0, 0, 255)
+              )
+              cx, cy = size / 2, size / 2
+              tw, th = size * 0.38, size * 0.44
+              x0 = cx - tw * 0.35
+              draw.polygon(
+                  [(x0, cy - th/2), (x0 + tw, cy), (x0, cy + th/2)],
+                  fill=(255, 255, 255, 255)
+              )
+              img.save(f"{iconset}/icon_{size}x{size}.png")
+              if size <= 512:
+                  img2 = img.resize((size * 2, size * 2), Image.LANCZOS)
+                  img2.save(f"{iconset}/icon_{size}x{size}@2x.png")
+
+          EOF
+          iconutil -c icns icon.iconset -o assets/app.icns
+
+      - name: Build .app with PyInstaller
+        run: pyinstaller YouTubeMediaDownloader-mac.spec --noconfirm
+
+      - name: Zip .app bundle
+        run: |
+          cd dist
+          zip -r YouTubeMediaDownloader-macOS.zip YouTubeMediaDownloader.app
+
+      - name: Upload to GitHub release
+        run: |
+          gh release delete-asset v1.0.0 YouTubeMediaDownloader-macOS.zip --yes 2>/dev/null || true
+          gh release upload v1.0.0 dist/YouTubeMediaDownloader-macOS.zip
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -10,7 +10,6 @@ env/
 # Build artifacts
 build/
 dist/
-*.spec
 
 # OS/editor
 .DS_Store
